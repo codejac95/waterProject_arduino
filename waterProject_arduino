@@ -1,0 +1,156 @@
+//kör denna kod i arduino IDE 
+
+#include <ArduinoHttpClient.h>
+#include <WiFiS3.h>
+#include "settings.h"
+
+int tempLowLed = A0;
+int tempHighLed = A1;
+int humLowLed = A2;
+int humHighLed = A3;
+int moiLowled = A4;
+int dhtSensorPin = 8; 
+int moiSensorPin = A5;
+int moiSensorValue = 0; 
+int moiPowerPin = 13; 
+
+byte dat[5];
+
+char ssid[] = SECRET_SSID;
+char password[] = SECRET_PASSWORD;
+char serverAddress[] = "seashell-app-7hlnd.ondigitalocean.app";
+int port = 443;
+WiFiSSLClient wifi;
+HttpClient client = HttpClient(wifi,serverAddress,port);
+
+void setup() {
+  Serial.begin(9600);
+  WiFi.begin(ssid, password);
+  while(WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+  Serial.println("Ansluten till wifi!");
+  pinMode(tempLowLed, OUTPUT);
+  pinMode(tempHighLed, OUTPUT);
+  pinMode(humLowLed, OUTPUT);
+  pinMode(humHighLed, OUTPUT);
+  pinMode(moiLowled, OUTPUT);
+  pinMode(moiPowerPin, OUTPUT); 
+  pinMode(dhtSensorPin, OUTPUT);
+  digitalWrite(moiPowerPin, LOW);
+}
+
+byte read_data() {
+  byte data;
+  for(int i = 0; i < 8; i++) {
+    if(digitalRead(dhtSensorPin) == LOW) {
+      while(digitalRead(dhtSensorPin) == LOW); 
+      delayMicroseconds(30); 
+      if(digitalRead(dhtSensorPin) == HIGH)
+      data |= (1<<(7 - i)); 
+      while(digitalRead(dhtSensorPin) == HIGH); 
+    }
+  }
+  return data;
+}
+
+void dhtSensor() {
+ digitalWrite(dhtSensorPin, LOW); 
+ delay(30); 
+ digitalWrite(dhtSensorPin, HIGH);
+ delayMicroseconds(40); 
+ pinMode(dhtSensorPin, INPUT);
+ while(digitalRead(dhtSensorPin) == HIGH);
+ delayMicroseconds(80); 
+ if(digitalRead(dhtSensorPin) == LOW);
+ delayMicroseconds(80); 
+ for(int i = 0; i < 4; i++) 
+ dat[i] = read_data();
+ pinMode(dhtSensorPin, OUTPUT);
+ digitalWrite(dhtSensorPin, HIGH); 
+}
+
+void moistureSensor() {
+ digitalWrite(moiPowerPin, HIGH); 
+ delay(100); 
+ moiSensorValue = analogRead(moiSensorPin); 
+ digitalWrite(moiPowerPin, LOW); 
+ moiSensorValue = map(moiSensorValue, 0, 1023, 100, 0); 
+}
+
+void loop() {
+ dhtSensor();
+ Serial.print("Current temperature = ");
+ Serial.print(dat[2], DEC); 
+ Serial.print('.');
+ Serial.print(dat[3], DEC); 
+ Serial.println('C');
+ Serial.print("Current humdity = ");
+ Serial.print(dat[0], DEC); 
+ Serial.print('.');
+ Serial.print(dat[1], DEC); 
+ Serial.println('%');
+ moistureSensor(); 
+ Serial.print("Current moisture = ");
+ Serial.print(moiSensorValue) ;
+ Serial.println('%');
+
+  if(dat[2] < 16.0) {
+    digitalWrite(tempLowLed,HIGH);
+    if(dat[2] > 20.0) {
+      digitalWrite(tempLowLed, LOW);
+    }
+  } else {
+    digitalWrite(tempLowLed,LOW);
+  }
+  if(dat[2] > 27.0) {
+    digitalWrite(tempHighLed, HIGH);
+    if(dat[2] < 22.0) {
+      digitalWrite(tempHighLed, LOW);
+    }
+  } else {
+    digitalWrite(tempHighLed,LOW);
+  }
+ 
+  if(dat[0] < 65) {
+    digitalWrite(humLowLed, HIGH);
+    if(dat[0] > 75) {
+      digitalWrite(humLowLed, LOW);
+    }
+  } else {
+    digitalWrite(humLowLed, LOW);
+  }
+  
+  if(dat[0] > 85) {
+    digitalWrite(humHighLed, HIGH);
+    if(dat[0] < 75) {
+      digitalWrite(humHighLed, LOW);
+    }
+  } else {
+    digitalWrite(humHighLed, LOW);
+  }
+
+  if(moiSensorValue < 40) {
+    digitalWrite(moiLowled, HIGH);
+    if(moiSensorValue > 60 ) {
+      digitalWrite(moiLowled, LOW);
+    }
+  } else {
+    digitalWrite(moiLowled, LOW);
+  }
+
+ String postData = "{\"temperature\":" + String(dat[2]) + "." + String(dat[3]) + 
+                    ",\"humidity\":" + String(dat[0]) + "." + String(dat[1]) +
+                    ",\"moisture\":" + String(moiSensorValue) + "}";
+  client.beginRequest();
+  client.post("/setData");  
+  client.sendHeader("Content-Type", "application/json");
+  client.sendHeader("Content-Length", postData.length());
+  client.beginBody();
+  client.print(postData); 
+  client.endRequest();
+  delay(900000);
+}
+
+
+
