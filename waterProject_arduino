@@ -25,11 +25,7 @@ HttpClient client = HttpClient(wifi,serverAddress,port);
 
 void setup() {
   Serial.begin(9600);
-  WiFi.begin(ssid, password);
-  while(WiFi.status() != WL_CONNECTED) {
-    delay(500);
-  }
-  Serial.println("Ansluten till wifi!");
+  wifiSetup();
   pinMode(tempLowLed, OUTPUT);
   pinMode(tempHighLed, OUTPUT);
   pinMode(humLowLed, OUTPUT);
@@ -38,6 +34,24 @@ void setup() {
   pinMode(moiPowerPin, OUTPUT); 
   pinMode(dhtSensorPin, OUTPUT);
   digitalWrite(moiPowerPin, LOW);
+}
+void wifiSetup() {
+  if (WiFi.status() != WL_CONNECTED) {  
+    Serial.println("Försöker ansluta till Wi-Fi...");
+    WiFi.begin(ssid, password);
+    
+    unsigned long startAttemptTime = millis(); 
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 10000) {  
+      delay(500);
+      Serial.print(".");
+    }
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("Ansluten till Wi-Fi!");
+    } else {
+      Serial.println("Kunde inte ansluta till Wi-Fi.");
+    }
+  }
 }
 
 byte read_data() {
@@ -78,23 +92,7 @@ void moistureSensor() {
  moiSensorValue = map(moiSensorValue, 0, 1023, 100, 0); 
 }
 
-void loop() {
- dhtSensor();
- Serial.print("Current temperature = ");
- Serial.print(dat[2], DEC); 
- Serial.print('.');
- Serial.print(dat[3], DEC); 
- Serial.println('C');
- Serial.print("Current humdity = ");
- Serial.print(dat[0], DEC); 
- Serial.print('.');
- Serial.print(dat[1], DEC); 
- Serial.println('%');
- moistureSensor(); 
- Serial.print("Current moisture = ");
- Serial.print(moiSensorValue) ;
- Serial.println('%');
-
+void ledConfig() {
   if(dat[2] < 16.0) {
     digitalWrite(tempLowLed,HIGH);
     if(dat[2] > 20.0) {
@@ -138,19 +136,46 @@ void loop() {
   } else {
     digitalWrite(moiLowled, LOW);
   }
-
- String postData = "{\"temperature\":" + String(dat[2]) + "." + String(dat[3]) + 
-                    ",\"humidity\":" + String(dat[0]) + "." + String(dat[1]) +
-                    ",\"moisture\":" + String(moiSensorValue) + "}";
-  client.beginRequest();
-  client.post("/setData");  
-  client.sendHeader("Content-Type", "application/json");
-  client.sendHeader("Content-Length", postData.length());
-  client.beginBody();
-  client.print(postData); 
-  client.endRequest();
-  delay(900000);
 }
 
+void loop() {
+  dhtSensor();
+  Serial.print("Current temperature = ");
+  Serial.print(dat[2], DEC); 
+  Serial.print('.');
+  Serial.print(dat[3], DEC); 
+  Serial.println('C');
+  Serial.print("Current humdity = ");
+  Serial.print(dat[0], DEC); 
+  Serial.print('.');
+  Serial.print(dat[1], DEC); 
+  Serial.println('%');
+  moistureSensor(); 
+  Serial.print("Current moisture = ");
+  Serial.print(moiSensorValue) ;
+  Serial.println('%');
+  ledConfig();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    String postData = "{\"temperature\":" + String(dat[2]) + "." + String(dat[3]) + 
+                      ",\"humidity\":" + String(dat[0]) + "." + String(dat[1]) +
+                      ",\"moisture\":" + String(moiSensorValue) + "}";
+    client.beginRequest();
+    client.post("/setData");  
+    client.sendHeader("Content-Type", "application/json");
+    client.sendHeader("Content-Length", postData.length());  
+    client.beginBody();
+    client.print(postData); 
+    client.endRequest();
+
+    int statusCode = client.responseStatusCode();  
+    Serial.print("Statuskod från servern: ");
+    Serial.println(statusCode);
+  } else {
+      Serial.println("Wi-Fi inte anslutet, data skickades inte. Försöker återansluta.");
+      wifiSetup();
+    }
+  delay(900000);
+}
 
 
